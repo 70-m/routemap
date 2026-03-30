@@ -833,53 +833,53 @@ function onNaviGps(pos){
 
 // 現在位置から次ステップまでの距離 → 発話
 function checkAndSpeak(curPos){
-  // 残りステップを探す（現在から最終まで順番に）
-  for(let i=naviCurrentStepIdx;i<naviSteps.length;i++){
-    const step=naviSteps[i];
-    const sLat=step.location[1],sLng=step.location[0];
-    const dist=haversine(curPos,[sLat,sLng]);
+  // notification はスキップして最初の有効ステップを探す
+  while(
+    naviCurrentStepIdx < naviSteps.length &&
+    naviSteps[naviCurrentStepIdx].type === 'notification'
+  ){ naviCurrentStepIdx++; }
 
-    if(step.type==='notification'){continue;} // skip
+  if(naviCurrentStepIdx >= naviSteps.length) return;
 
-    // 通過判定（案内点を通過したとき＝0m）
-    if(dist<=3&&i===naviCurrentStepIdx&&i<naviSteps.length-1){
-      naviCurrentStepIdx=i+1;
-      naviSpoken={};// 次ステップ用にリセット
-      updateNaviBanner(naviCurrentStepIdx,null);
-      // 目的地到着
-      if(naviSteps[naviCurrentStepIdx]?.type==='arrive'||naviCurrentStepIdx>=naviSteps.length-1){
-        speak(makeVoiceText('arrive','','','',null));
-        setTimeout(()=>stopNavi(),3000);
-        return;
-      }
-      break;
+  const step = naviSteps[naviCurrentStepIdx];
+  const dist = haversine(curPos, [step.location[1], step.location[0]]);
+
+  // ④ 通過判定（≤3m = 実質0m）
+  if(dist <= 3 && naviCurrentStepIdx < naviSteps.length - 1){
+    naviCurrentStepIdx++;
+    naviSpoken = {};
+    // 到着ステップに切り替わった場合
+    if(naviSteps[naviCurrentStepIdx]?.type === 'arrive' ||
+       naviCurrentStepIdx >= naviSteps.length - 1){
+      speak(makeVoiceText('arrive','','','',null));
+      updateNaviBanner(naviCurrentStepIdx, null);
+      highlightNaviStep(naviCurrentStepIdx);
+      setTimeout(()=>stopNavi(), 3000);
+      return;
     }
-
-    // 次のステップへの案内発話（iがnaviCurrentStepIdx+1）
-    const nextStep=naviSteps[naviCurrentStepIdx+1>naviSteps.length-1?naviCurrentStepIdx:naviCurrentStepIdx+1];
-    if(!nextStep)break;
-    const nDist=haversine(curPos,[nextStep.location[1],nextStep.location[0]]);
-
-    // 3段階タイミング
-    if(nDist>200&&nDist<=400&&!naviSpoken[`${naviCurrentStepIdx}_prep`]){
-      naviSpoken[`${naviCurrentStepIdx}_prep`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'prep'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else if(nDist>50&&nDist<=200&&!naviSpoken[`${naviCurrentStepIdx}_soon`]){
-      naviSpoken[`${naviCurrentStepIdx}_soon`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'soon'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else if(nDist<=50&&!naviSpoken[`${naviCurrentStepIdx}_now`]){
-      naviSpoken[`${naviCurrentStepIdx}_now`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'now'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else{
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }
-    break;
+    updateNaviBanner(naviCurrentStepIdx, null);
+    highlightNaviStep(naviCurrentStepIdx);
+    return;
   }
 
-  // ステップ一覧ハイライト
+  // ① 予告（200〜400m手前）
+  if(dist > 200 && dist <= 400 && !naviSpoken[`${naviCurrentStepIdx}_prep`]){
+    naviSpoken[`${naviCurrentStepIdx}_prep`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep'));
+  }
+  // ② 直前（50〜200m手前）
+  else if(dist > 50 && dist <= 200 && !naviSpoken[`${naviCurrentStepIdx}_soon`]){
+    naviSpoken[`${naviCurrentStepIdx}_soon`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon'));
+  }
+  // ③ 実行（≤50m）
+  else if(dist <= 50 && !naviSpoken[`${naviCurrentStepIdx}_now`]){
+    naviSpoken[`${naviCurrentStepIdx}_now`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now'));
+  }
+
+  // バナー・ハイライトは毎フレーム更新
+  updateNaviBanner(naviCurrentStepIdx, dist);
   highlightNaviStep(naviCurrentStepIdx);
 }
 
