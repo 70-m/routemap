@@ -687,8 +687,9 @@ async function searchRoute(){
     if(!startLatLng)throw new Error('出発地を設定してください');
     if(!endLatLng)  throw new Error('目的地を設定してください');
 
-    const profiles={driving:'driving',cycling:'cycling',foot:'foot'};
-    const url=`https://router.project-osrm.org/route/v1/${profiles[selectedMode]}/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
+    const serverProfiles={driving:["routed-car","driving"],cycling:["routed-bike","bike"],foot:["routed-foot","foot"]};
+    const [srv,prof]=serverProfiles[selectedMode];
+    const url=`https://routing.openstreetmap.de/${srv}/route/v1/${prof}/${startLatLng.lng},${startLatLng.lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
     logRequest(url);
     const res=await fetch(url);
     const data=await res.json();
@@ -923,7 +924,7 @@ async function reroute(lat,lng){
   document.getElementById('navi-rerout-status').textContent='再探索中...';
   speak('ルートを外れました。再探索します。');
   try{
-    const url=`https://router.project-osrm.org/route/v1/${({driving:'driving',cycling:'cycling',foot:'foot'})[selectedMode]}/${lng},${lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
+    const [srv2,prof2]=({driving:['routed-car','driving'],cycling:['routed-bike','bike'],foot:['routed-foot','foot']})[selectedMode];const url=`https://routing.openstreetmap.de/${srv2}/route/v1/${prof2}/${lng},${lat};${endLatLng.lng},${endLatLng.lat}?overview=full&geometries=geojson&steps=true`;
     const res=await fetch(url);
     const data=await res.json();
     if(data.code!=='Ok')throw new Error('再探索失敗');
