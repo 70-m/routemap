@@ -799,6 +799,7 @@ async function startNavi(){
   naviActive=true;
   naviSpoken={};
   naviCurrentStepIdx=0;
+  naviFirstGps=true;  // 初回GPS取得時にステップ位置を補正する
   naviMuted=false;
   document.getElementById('navi-mute-btn').textContent='🔊';
   document.getElementById('navi-section').style.display='block';
@@ -825,9 +826,13 @@ async function startNavi(){
   // 出発の発話
   speak(makeVoiceText('depart','','','',null));
   updateNaviBanner(naviCurrentStepIdx,null);
+  highlightNaviStep(naviCurrentStepIdx);
   goToMap();
   logVoice('案内開始');
 }
+
+// 案内開始直後の初回GPS取得フラグ
+let naviFirstGps = false;
 
 // GPS更新 → 案内ロジック
 function onNaviGps(pos){
@@ -843,6 +848,12 @@ function onNaviGps(pos){
 
   if(!naviActive)return;
 
+  // ── 初回GPS取得時：現在地から最も近い未来ステップを探してスキップ ──
+  if(naviFirstGps){
+    naviFirstGps=false;
+    seekNearestStep(curPos);
+  }
+
   // 逸脱チェック（ルート座標から50m以上離れたらリルート）
   const minDist=minDistToRoute(curPos);
   if(minDist>50){
@@ -854,6 +865,36 @@ function onNaviGps(pos){
 
   // 次のステップまでの距離を計算して案内発話
   checkAndSpeak(curPos);
+}
+
+// 現在地から見て「これから向かうべき最初のステップ」を探してセット
+function seekNearestStep(curPos){
+  // 戦略：現在地に最も近いステップを起点とし、
+  // そこから先のステップのうち現在地より「前方」にあるものを案内開始点とする。
+  // 簡易実装：全ステップを走査し、現在地から一番近いステップのインデックスを採用。
+  // depart/notification は飛ばす。
+  let bestIdx = naviCurrentStepIdx;
+  let bestDist = Infinity;
+  for(let i = naviCurrentStepIdx; i < naviSteps.length; i++){
+    const s = naviSteps[i];
+    if(s.type === 'notification') continue;
+    const d = haversine(curPos, [s.location[1], s.location[0]]);
+    if(d < bestDist){
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  // 最近ステップが depart なら次へ（出発点は通過済みとみなす）
+  if(naviSteps[bestIdx]?.type === 'depart' && bestIdx < naviSteps.length - 1){
+    bestIdx++;
+  }
+  if(bestIdx !== naviCurrentStepIdx){
+    naviCurrentStepIdx = bestIdx;
+    naviSpoken = {};
+    updateNaviBanner(naviCurrentStepIdx, null);
+    highlightNaviStep(naviCurrentStepIdx);
+    logVoice(`案内開始位置を調整：ステップ${bestIdx}から開始`);
+  }
 }
 
 // 現在位置から次ステップまでの距離 → 発話
@@ -1051,7 +1092,10 @@ function startDemo(){
   document.getElementById('demo-play-btn').textContent='⏸';
   goToMap();setTimeout(()=>map.setView(demoCoords[0],16),100);
   speak(makeVoiceText('depart','','','',null));
-  updateNaviBanner(0,null);
+  // デモ開始位置がルート先頭でない場合に備えてシーク
+  seekNearestStep(demoCoords[0]);
+  updateNaviBanner(naviCurrentStepIdx,null);
+  highlightNaviStep(naviCurrentStepIdx);
   demoRafId=requestAnimationFrame(demoTick);
 }
 function demoTick(ts){
