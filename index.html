@@ -144,7 +144,9 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 .map-fab:hover{background:var(--bg);border-color:var(--accent);color:var(--accent);}
 .map-fab:active{transform:scale(.92);}
 .map-fab.on{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,.1);}
-#center-btn{bottom:70px;}
+#center-btn{bottom:16px;}          /* 最下段 */
+#zoom-out-btn{bottom:66px;}        /* 16 + 42 + 8 */
+#zoom-in-btn{bottom:116px;}        /* 66 + 42 + 8 */
 #hint-box{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(13,15,20,.85);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:18px;padding:6px 14px;font-size:11px;color:var(--muted);z-index:900;pointer-events:none;white-space:nowrap;transition:opacity .3s;}
 
 /* 地図上の音声案内オーバーレイ */
@@ -214,7 +216,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 @keyframes gps-pulse{0%{transform:translate(-50%,-50%) scale(1);opacity:.6;}100%{transform:translate(-50%,-50%) scale(3.5);opacity:0;}}
 @keyframes car-bounce{0%,100%{transform:translate(-50%,-50%) scale(1);}50%{transform:translate(-50%,-50%) scale(1.18);}}
 .leaflet-container{background:#e8e0d8;}
-.leaflet-control-zoom a{background:var(--panel)!important;color:var(--text)!important;border-color:var(--border)!important;}
+/* leaflet デフォルトzoomコントロールは無効化済み */
 
 @media(min-width:900px){
   #app{flex-direction:row;}
@@ -360,6 +362,8 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
         </div>
       </div>
       <div id="hint-box">タップして出発地・目的地を設定</div>
+      <button class="map-fab" id="zoom-in-btn"  title="拡大">＋</button>
+      <button class="map-fab" id="zoom-out-btn" title="縮小">－</button>
       <button class="map-fab" id="center-btn">◎</button>
     </div>
 
@@ -403,7 +407,7 @@ function goToMap(){if(window.innerWidth<900){document.querySelectorAll('.tab').f
 // ════════════════════════════════════════════════
 //  地図初期化
 // ════════════════════════════════════════════════
-const map=L.map('leaflet-map',{center:[35.6762,139.6503],zoom:13});
+const map=L.map('leaflet-map',{center:[35.6762,139.6503],zoom:13,zoomControl:false});
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:19}).addTo(map);
 
 // ════════════════════════════════════════════════
@@ -416,6 +420,7 @@ let useGpsAsStart=false;
 // デモ
 let demoCoords=[],demoIdx=0,demoRafId=null,demoPaused=true,demoSpeed=1;
 let demoMarker=null,demoTrail=null,lastDemoTs=null,demoSteps=[];
+let stepMarkers=[];  // 地図上のステップ番号マーカー
 // ログ
 let logCount=0;
 // 音声案内
@@ -428,6 +433,11 @@ let naviCurrentStepIdx=0;       // 現在のステップインデックス
 let naviRerouteTimer=null;      // リルートクールダウン
 let lastRerouteTime=0;
 let wakeLock=null;
+// 案D：最近接点通過判定用
+const APPROACH_THR  = 30;  // 監視開始距離（m）：この距離以内で接近監視ON
+const FALLBACK_THR  = 60;  // 強制通過距離（m）：接近後にこれ以上離れたら強制切替
+let naviApproaching = false;   // 現在ステップへの接近フラグ
+let naviPrevDist    = Infinity; // 前フレームの距離
 
 // ════════════════════════════════════════════════
 //  アイコン定義
@@ -739,6 +749,40 @@ function drawRoute(route){
 }
 
 // ════════════════════════════════════════════════
+//  ステップマーカー・手順一覧の再構築（共通処理）
+// ════════════════════════════════════════════════
+function rebuildStepMarkersAndList(route){
+  // naviSteps を route から再構築（リルート時も対応）
+  // ※ showSummary 経由の場合は呼び出し前に naviSteps 構築済み
+  // ※ reroute 経由の場合も呼び出し前に naviSteps 構築済み
+
+  const list=document.getElementById('steps-list');
+  list.innerHTML='';
+
+  let n=1;
+  naviSteps.forEach((step,i)=>{
+    if(!step.name&&step.distance<1)return;
+    const num=n++;
+    const d=step.distance<1000?`${step.distance.toFixed(0)}m`:`${(step.distance/1000).toFixed(1)}km`;
+    const el=document.createElement('div');el.className='step-item';
+    el.innerHTML=`<span class="step-num">${num}</span><span class="step-text">${maneuverArrow(step.type,step.modifier)} ${maneuverLabel(step.type,step.modifier,step.name)}</span><span class="step-dist">${d}</span>`;
+    list.appendChild(el);
+    demoSteps.push({el, lat:step.location[1], lng:step.location[0], naviIdx:i, num});
+
+    // 地図上にステップ番号マーカーを追加（depart/arrive/notification は除外）
+    if(step.type!=='depart'&&step.type!=='notification'&&step.type!=='arrive'){
+      const icon=L.divIcon({
+        className:'',
+        html:`<div style="width:22px;height:22px;border-radius:50%;background:#fff;border:2px solid #252a35;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:#252a35;box-shadow:0 1px 6px rgba(0,0,0,.4);line-height:1;">${num}</div>`,
+        iconSize:[22,22],iconAnchor:[11,11]
+      });
+      const m=L.marker([step.location[1],step.location[0]],{icon,zIndexOffset:200}).addTo(map);
+      stepMarkers.push(m);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════
 //  概要表示
 // ════════════════════════════════════════════════
 function showSummary(route){
@@ -750,17 +794,11 @@ function showSummary(route){
   document.getElementById('route-summary').classList.add('visible');
   document.getElementById('summary-section').style.display='block';
 
-  const list=document.getElementById('steps-list');
-  list.innerHTML='';demoSteps=[];
-  let n=1;
-  naviSteps.forEach((step,i)=>{
-    if(!step.name&&step.distance<1)return;
-    const d=step.distance<1000?`${step.distance.toFixed(0)}m`:`${(step.distance/1000).toFixed(1)}km`;
-    const el=document.createElement('div');el.className='step-item';
-    el.innerHTML=`<span class="step-num">${n++}</span><span class="step-text">${maneuverArrow(step.type,step.modifier)} ${maneuverLabel(step.type,step.modifier,step.name)}</span><span class="step-dist">${d}</span>`;
-    list.appendChild(el);
-    demoSteps.push({el,lat:step.location[1],lng:step.location[0]});
-  });
+  // 既存のステップマーカーを削除
+  stepMarkers.forEach(m=>map.removeLayer(m));
+  stepMarkers=[];
+  demoSteps=[];
+  rebuildStepMarkersAndList(route);
   document.getElementById('steps-section').style.display='block';
 }
 
@@ -774,6 +812,9 @@ async function startNavi(){
   naviActive=true;
   naviSpoken={};
   naviCurrentStepIdx=0;
+  naviFirstGps=true;  // 初回GPS取得時にステップ位置を補正する
+  naviApproaching=false;
+  naviPrevDist=Infinity;
   naviMuted=false;
   document.getElementById('navi-mute-btn').textContent='🔊';
   document.getElementById('navi-section').style.display='block';
@@ -800,9 +841,13 @@ async function startNavi(){
   // 出発の発話
   speak(makeVoiceText('depart','','','',null));
   updateNaviBanner(naviCurrentStepIdx,null);
+  highlightNaviStep(naviCurrentStepIdx);
   goToMap();
   logVoice('案内開始');
 }
+
+// 案内開始直後の初回GPS取得フラグ
+let naviFirstGps = false;
 
 // GPS更新 → 案内ロジック
 function onNaviGps(pos){
@@ -818,6 +863,12 @@ function onNaviGps(pos){
 
   if(!naviActive)return;
 
+  // ── 初回GPS取得時：現在地から最も近い未来ステップを探してスキップ ──
+  if(naviFirstGps){
+    naviFirstGps=false;
+    seekNearestStep(curPos);
+  }
+
   // 逸脱チェック（ルート座標から50m以上離れたらリルート）
   const minDist=minDistToRoute(curPos);
   if(minDist>50){
@@ -831,55 +882,115 @@ function onNaviGps(pos){
   checkAndSpeak(curPos);
 }
 
+// 現在地から見て「これから向かうべき最初のステップ」を探してセット
+function seekNearestStep(curPos){
+  // 戦略：現在地に最も近いステップを起点とし、
+  // そこから先のステップのうち現在地より「前方」にあるものを案内開始点とする。
+  // 簡易実装：全ステップを走査し、現在地から一番近いステップのインデックスを採用。
+  // depart/notification は飛ばす。
+  let bestIdx = naviCurrentStepIdx;
+  let bestDist = Infinity;
+  for(let i = naviCurrentStepIdx; i < naviSteps.length; i++){
+    const s = naviSteps[i];
+    if(s.type === 'notification') continue;
+    const d = haversine(curPos, [s.location[1], s.location[0]]);
+    if(d < bestDist){
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  // 最近ステップが depart なら次へ（出発点は通過済みとみなす）
+  if(naviSteps[bestIdx]?.type === 'depart' && bestIdx < naviSteps.length - 1){
+    bestIdx++;
+  }
+  if(bestIdx !== naviCurrentStepIdx){
+    naviCurrentStepIdx = bestIdx;
+    naviSpoken      = {};
+    naviApproaching = false;
+    naviPrevDist    = Infinity;
+    updateNaviBanner(naviCurrentStepIdx, null);
+    highlightNaviStep(naviCurrentStepIdx);
+    logVoice(`案内開始位置を調整：ステップ${bestIdx}から開始`);
+  }
+}
+
 // 現在位置から次ステップまでの距離 → 発話
 function checkAndSpeak(curPos){
-  // 残りステップを探す（現在から最終まで順番に）
-  for(let i=naviCurrentStepIdx;i<naviSteps.length;i++){
-    const step=naviSteps[i];
-    const sLat=step.location[1],sLng=step.location[0];
-    const dist=haversine(curPos,[sLat,sLng]);
+  // notification はスキップして最初の有効ステップを探す
+  while(
+    naviCurrentStepIdx < naviSteps.length &&
+    naviSteps[naviCurrentStepIdx].type === 'notification'
+  ){ naviCurrentStepIdx++; }
 
-    if(step.type==='notification'){continue;} // skip
+  if(naviCurrentStepIdx >= naviSteps.length) return;
 
-    // 通過判定（30m以内に来たら次へ）
-    if(dist<30&&i===naviCurrentStepIdx&&i<naviSteps.length-1){
-      naviCurrentStepIdx=i+1;
-      naviSpoken={};// 次ステップ用にリセット
-      updateNaviBanner(naviCurrentStepIdx,null);
-      // 目的地到着
-      if(naviSteps[naviCurrentStepIdx]?.type==='arrive'||naviCurrentStepIdx>=naviSteps.length-1){
-        speak(makeVoiceText('arrive','','','',null));
-        setTimeout(()=>stopNavi(),3000);
-        return;
-      }
-      break;
-    }
+  // 移動手段別の発話閾値
+  const isFoot = selectedMode === 'foot';
+  const THR_SOON = isFoot ?   5 :  50;  // 直前フェーズの下限（m）
+  const THR_NOW  = isFoot ?   5 :  50;  // 実行フェーズの閾値（m）
 
-    // 次のステップへの案内発話（iがnaviCurrentStepIdx+1）
-    const nextStep=naviSteps[naviCurrentStepIdx+1>naviSteps.length-1?naviCurrentStepIdx:naviCurrentStepIdx+1];
-    if(!nextStep)break;
-    const nDist=haversine(curPos,[nextStep.location[1],nextStep.location[0]]);
+  // ── 案D：最近接点通過判定 ──
+  // 現在ステップの案内点までの距離を計算
+  const step = naviSteps[naviCurrentStepIdx];
+  const dist = haversine(curPos, [step.location[1], step.location[0]]);
 
-    // 3段階タイミング
-    if(nDist>200&&nDist<=400&&!naviSpoken[`${naviCurrentStepIdx}_prep`]){
-      naviSpoken[`${naviCurrentStepIdx}_prep`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'prep'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else if(nDist>50&&nDist<=200&&!naviSpoken[`${naviCurrentStepIdx}_soon`]){
-      naviSpoken[`${naviCurrentStepIdx}_soon`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'soon'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else if(nDist<=50&&!naviSpoken[`${naviCurrentStepIdx}_now`]){
-      naviSpoken[`${naviCurrentStepIdx}_now`]=true;
-      speak(makeVoiceText(nextStep.type,nextStep.modifier,nextStep.name,nDist,'now'));
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }else{
-      updateNaviBanner(naviCurrentStepIdx+1,nDist);
-    }
-    break;
+  // ① APPROACH_THR(30m)以内に入ったら接近監視ON
+  if(dist <= APPROACH_THR){
+    naviApproaching = true;
   }
 
-  // ステップ一覧ハイライト
+  // ② 通過判定：接近後に距離が増加（最近接点を通過）or FALLBACK_THR(60m)超で強制通過
+  const passed =
+    (naviApproaching && dist > naviPrevDist && naviPrevDist <= APPROACH_THR) || // 最近接点通過
+    (naviApproaching && dist > FALLBACK_THR);                                    // 強制フォールバック
+
+  naviPrevDist = dist; // 前フレーム距離を更新
+
+  if(passed && naviCurrentStepIdx < naviSteps.length - 1){
+    naviCurrentStepIdx++;
+    naviSpoken      = {};
+    naviApproaching = false;
+    naviPrevDist    = Infinity;
+
+    // notification をスキップ
+    while(
+      naviCurrentStepIdx < naviSteps.length &&
+      naviSteps[naviCurrentStepIdx].type === 'notification'
+    ){ naviCurrentStepIdx++; }
+
+    // 到着チェック
+    if(naviSteps[naviCurrentStepIdx]?.type === 'arrive' ||
+       naviCurrentStepIdx >= naviSteps.length - 1){
+      speak(makeVoiceText('arrive','','','',null));
+      updateNaviBanner(naviCurrentStepIdx, null);
+      highlightNaviStep(naviCurrentStepIdx);
+      setTimeout(()=>stopNavi(), 3000);
+      return;
+    }
+    updateNaviBanner(naviCurrentStepIdx, null);
+    highlightNaviStep(naviCurrentStepIdx);
+    return;
+  }
+
+  // 発話判定（各フェーズ1回のみ）
+  // ① 予告（200〜400m手前）：移動手段共通
+  if(dist > 200 && dist <= 400 && !naviSpoken[`${naviCurrentStepIdx}_prep`]){
+    naviSpoken[`${naviCurrentStepIdx}_prep`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep'));
+  }
+  // ② 直前（THR_SOON〜200m手前）
+  else if(dist > THR_SOON && dist <= 200 && !naviSpoken[`${naviCurrentStepIdx}_soon`]){
+    naviSpoken[`${naviCurrentStepIdx}_soon`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon'));
+  }
+  // ③ 実行（≤THR_NOW）
+  else if(dist <= THR_NOW && !naviSpoken[`${naviCurrentStepIdx}_now`]){
+    naviSpoken[`${naviCurrentStepIdx}_now`] = true;
+    speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now'));
+  }
+
+  // バナー・ハイライトは必ず毎回更新
+  updateNaviBanner(naviCurrentStepIdx, dist);
   highlightNaviStep(naviCurrentStepIdx);
 }
 
@@ -903,9 +1014,28 @@ function updateNaviBanner(stepIdx,dist){
   document.getElementById('map-navi-text').textContent=label;
 }
 
-// ステップ一覧のハイライト
-function highlightNaviStep(idx){
-  demoSteps.forEach(({el},i)=>el.classList.toggle('active-step',i===idx));
+// ステップ一覧のハイライト（naviCurrentStepIdx と demoSteps の naviIdx で照合）
+function highlightNaviStep(naviIdx){
+  demoSteps.forEach(({el,naviIdx:ni})=>el.classList.toggle('active-step',ni===naviIdx));
+  // 地図上のステップマーカーも強調（アクティブなもの以外を薄く）
+  let markerPos=0;
+  demoSteps.forEach(({naviIdx:ni,num},i)=>{
+    const s=naviSteps[ni];
+    if(s.type==='depart'||s.type==='notification')return;
+    const m=stepMarkers[markerPos++];
+    if(!m)return;
+    const isActive=ni===naviIdx;
+    m.getElement()&&(m.getElement().style.opacity=isActive?'1':'0.45');
+    if(isActive){
+      m.getElement()&&Object.assign(m.getElement().firstChild.style,{
+        background:'#a78bfa',color:'#fff',borderColor:'#a78bfa'
+      });
+    }else{
+      m.getElement()&&Object.assign(m.getElement().firstChild.style,{
+        background:'#fff',color:'#252a35',borderColor:'#252a35'
+      });
+    }
+  });
 }
 
 // ルートまでの最短距離
@@ -936,7 +1066,14 @@ async function reroute(lat,lng){
         naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||''});
       });
     });
-    naviCurrentStepIdx=0;naviSpoken={};
+    naviCurrentStepIdx=0;naviSpoken={};naviApproaching=false;naviPrevDist=Infinity;
+
+    // 古いステップマーカーを削除して新ルートで再生成
+    stepMarkers.forEach(m=>map.removeLayer(m));
+    stepMarkers=[];
+    demoSteps=[];
+    rebuildStepMarkersAndList(route);
+
     drawRoute(route);
     document.getElementById('navi-offroute').style.display='none';
     document.getElementById('navi-rerout-status').textContent='';
@@ -978,7 +1115,7 @@ function startDemo(){
   if(demoCoords.length<2)return;
   stopDemo();stopNavi();
   // 案内状態を初期化
-  naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviMuted=false;
+  naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviApproaching=false;naviPrevDist=Infinity;naviMuted=false;
   document.getElementById('navi-mute-btn').textContent='🔊';
   document.getElementById('navi-section').style.display='block';
   document.getElementById('navi-bar').classList.add('visible');
@@ -995,30 +1132,47 @@ function startDemo(){
   document.getElementById('demo-play-btn').textContent='⏸';
   goToMap();setTimeout(()=>map.setView(demoCoords[0],16),100);
   speak(makeVoiceText('depart','','','',null));
-  updateNaviBanner(0,null);
+  // デモ開始位置がルート先頭でない場合に備えてシーク
+  seekNearestStep(demoCoords[0]);
+  updateNaviBanner(naviCurrentStepIdx,null);
+  highlightNaviStep(naviCurrentStepIdx);
   demoRafId=requestAnimationFrame(demoTick);
 }
 function demoTick(ts){
   if(demoPaused||demoIdx>=demoCoords.length-1)return;
   if(!lastDemoTs)lastDemoTs=ts;
   const dt=Math.min((ts-lastDemoTs)/1000,.1);lastDemoTs=ts;
-  let dist=BASE_SPD*demoSpeed*dt;
-  while(dist>0&&demoIdx<demoCoords.length-1){
+  let remain=BASE_SPD*demoSpeed*dt;
+  let curPos=null;
+
+  while(remain>0&&demoIdx<demoCoords.length-1){
     const a=demoCoords[demoIdx],b=demoCoords[demoIdx+1];
     const seg=haversine(a,b);
-    if(dist>=seg){dist-=seg;demoIdx++;}
-    else{
-      const t=dist/seg,pos=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];
-      demoMarker.setLatLng(pos);demoTrail.addLatLng(pos);
-      map.setView(pos,map.getZoom());
-      updateDemoProg();
-      // デモ中も音声案内チェック
-      if(naviActive)checkAndSpeak(pos);
-      dist=0;
+    if(remain>=seg){
+      // セグメントを丸ごと通過 → 終点を現在位置として記録
+      remain-=seg;
+      demoIdx++;
+      curPos=demoCoords[demoIdx];
+    }else{
+      // セグメント途中 → 補間して現在位置を計算
+      const t=remain/seg;
+      curPos=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+      remain=0;
     }
   }
+
+  // フレームごとに1回だけマーカー更新・地図追従・案内チェック
+  if(curPos){
+    demoMarker.setLatLng(curPos);
+    demoTrail.addLatLng(curPos);
+    map.setView(curPos,map.getZoom());
+    updateDemoProg();
+    if(naviActive)checkAndSpeak(curPos);
+  }
+
   if(demoIdx>=demoCoords.length-1){
-    demoMarker.setLatLng(demoCoords[demoCoords.length-1]);
+    const last=demoCoords[demoCoords.length-1];
+    demoMarker.setLatLng(last);
     document.getElementById('demo-play-btn').textContent='▶';
     document.getElementById('demo-progress-bar').style.width='100%';
     speak(makeVoiceText('arrive','','','',null));
@@ -1204,6 +1358,8 @@ myLocBtn.addEventListener('click',()=>{
     if(!isTracking)startGpsTracking();
   },()=>showStatus('現在地の取得に失敗しました','error'));
 });
+document.getElementById('zoom-in-btn').addEventListener('click',()=>map.zoomIn());
+document.getElementById('zoom-out-btn').addEventListener('click',()=>map.zoomOut());
 document.getElementById('center-btn').addEventListener('click',()=>{
   if(gpsLatLng)map.setView([gpsLatLng.lat,gpsLatLng.lng],16);
   if(!isTracking)startGpsTracking();
@@ -1222,7 +1378,7 @@ document.querySelectorAll('.mode-btn').forEach(btn=>{
     btn.classList.add('active');selectedMode=btn.dataset.mode;clearRoute();stopDemo();stopNavi();
   });
 });
-function clearRoute(){if(routeLayer){map.removeLayer(routeLayer);routeLayer=null;}}
+function clearRoute(){if(routeLayer){map.removeLayer(routeLayer);routeLayer=null;}stepMarkers.forEach(m=>map.removeLayer(m));stepMarkers=[];}
 function clearAll(){
   stopDemo();stopNavi();clearRoute();
   [startMarker,endMarker,gpsMarker,gpsAccCircle].forEach(m=>{if(m)map.removeLayer(m);});
