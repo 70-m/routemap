@@ -429,6 +429,11 @@ let naviCurrentStepIdx=0;       // 現在のステップインデックス
 let naviRerouteTimer=null;      // リルートクールダウン
 let lastRerouteTime=0;
 let wakeLock=null;
+// 案D：最近接点通過判定用
+const APPROACH_THR  = 30;  // 監視開始距離（m）：この距離以内で接近監視ON
+const FALLBACK_THR  = 60;  // 強制通過距離（m）：接近後にこれ以上離れたら強制切替
+let naviApproaching = false;   // 現在ステップへの接近フラグ
+let naviPrevDist    = Infinity; // 前フレームの距離
 
 // ════════════════════════════════════════════════
 //  アイコン定義
@@ -800,6 +805,8 @@ async function startNavi(){
   naviSpoken={};
   naviCurrentStepIdx=0;
   naviFirstGps=true;  // 初回GPS取得時にステップ位置を補正する
+  naviApproaching=false;
+  naviPrevDist=Infinity;
   naviMuted=false;
   document.getElementById('navi-mute-btn').textContent='🔊';
   document.getElementById('navi-section').style.display='block';
@@ -890,7 +897,9 @@ function seekNearestStep(curPos){
   }
   if(bestIdx !== naviCurrentStepIdx){
     naviCurrentStepIdx = bestIdx;
-    naviSpoken = {};
+    naviSpoken      = {};
+    naviApproaching = false;
+    naviPrevDist    = Infinity;
     updateNaviBanner(naviCurrentStepIdx, null);
     highlightNaviStep(naviCurrentStepIdx);
     logVoice(`案内開始位置を調整：ステップ${bestIdx}から開始`);
@@ -912,17 +921,34 @@ function checkAndSpeak(curPos){
   const THR_SOON = isFoot ?   5 :  50;  // 直前フェーズの下限（m）
   const THR_NOW  = isFoot ?   5 :  50;  // 実行フェーズの閾値（m）
 
-  // 通過判定：3m以内になるまで連続してステップを進める
-  // （短い区間が連続する場合でもバナーが確実に更新されるようwhileで処理）
-  while(naviCurrentStepIdx < naviSteps.length - 1){
-    const s = naviSteps[naviCurrentStepIdx];
-    if(s.type === 'notification'){ naviCurrentStepIdx++; continue; }
-    const d = haversine(curPos, [s.location[1], s.location[0]]);
-    if(d > 3) break; // 3mより遠ければ通過していないので抜ける
+  // ── 案D：最近接点通過判定 ──
+  // 現在ステップの案内点までの距離を計算
+  const step = naviSteps[naviCurrentStepIdx];
+  const dist = haversine(curPos, [step.location[1], step.location[0]]);
 
-    // 通過 → 次ステップへ
+  // ① APPROACH_THR(30m)以内に入ったら接近監視ON
+  if(dist <= APPROACH_THR){
+    naviApproaching = true;
+  }
+
+  // ② 通過判定：接近後に距離が増加（最近接点を通過）or FALLBACK_THR(60m)超で強制通過
+  const passed =
+    (naviApproaching && dist > naviPrevDist && naviPrevDist <= APPROACH_THR) || // 最近接点通過
+    (naviApproaching && dist > FALLBACK_THR);                                    // 強制フォールバック
+
+  naviPrevDist = dist; // 前フレーム距離を更新
+
+  if(passed && naviCurrentStepIdx < naviSteps.length - 1){
     naviCurrentStepIdx++;
-    naviSpoken = {};
+    naviSpoken      = {};
+    naviApproaching = false;
+    naviPrevDist    = Infinity;
+
+    // notification をスキップ
+    while(
+      naviCurrentStepIdx < naviSteps.length &&
+      naviSteps[naviCurrentStepIdx].type === 'notification'
+    ){ naviCurrentStepIdx++; }
 
     // 到着チェック
     if(naviSteps[naviCurrentStepIdx]?.type === 'arrive' ||
@@ -933,11 +959,10 @@ function checkAndSpeak(curPos){
       setTimeout(()=>stopNavi(), 3000);
       return;
     }
+    updateNaviBanner(naviCurrentStepIdx, null);
+    highlightNaviStep(naviCurrentStepIdx);
+    return;
   }
-
-  // 現在ステップの案内点までの距離を計算
-  const step = naviSteps[naviCurrentStepIdx];
-  const dist = haversine(curPos, [step.location[1], step.location[0]]);
 
   // 発話判定（各フェーズ1回のみ）
   // ① 予告（200〜400m手前）：移動手段共通
@@ -1033,7 +1058,7 @@ async function reroute(lat,lng){
         naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||''});
       });
     });
-    naviCurrentStepIdx=0;naviSpoken={};
+    naviCurrentStepIdx=0;naviSpoken={};naviApproaching=false;naviPrevDist=Infinity;
     drawRoute(route);
     document.getElementById('navi-offroute').style.display='none';
     document.getElementById('navi-rerout-status').textContent='';
@@ -1075,7 +1100,7 @@ function startDemo(){
   if(demoCoords.length<2)return;
   stopDemo();stopNavi();
   // 案内状態を初期化
-  naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviMuted=false;
+  naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviApproaching=false;naviPrevDist=Infinity;naviMuted=false;
   document.getElementById('navi-mute-btn').textContent='🔊';
   document.getElementById('navi-section').style.display='block';
   document.getElementById('navi-bar').classList.add('visible');
