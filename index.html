@@ -1122,7 +1122,7 @@ function stopNavi(){
 	naviActive=false;
 	if(naviWatchId!=null){navigator.geolocation.clearWatch(naviWatchId);naviWatchId=null;}
 	if(window.speechSynthesis)window.speechSynthesis.cancel();
-	if(wakeLock){wakeLock.release().catch(()=>{});wakeLock=null;}
+	if(wakeLock){wakeLock.release().catch(e=>console.warn(`[stopNavi] Wake Lock 解放失敗: ${e.message}`));wakeLock=null;}
 	document.getElementById('navi-section').style.display='none';
 	document.getElementById('navi-bar').classList.remove('visible');
 	document.getElementById('map-navi-overlay').classList.remove('visible');
