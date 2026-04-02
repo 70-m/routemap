@@ -26,7 +26,10 @@
 
 ### ログ
 - 処理の要所に適度な実行ログ（`console.log`）を入れる
-- エラー・失敗ケースには**必ず**ログを入れる（`console.error` / `console.warn`）
+- エラー・失敗ケースには**必ずログを入れる**（`console.error` / `console.warn`）
+
+### GitHub への記載
+- Issue・コミットメッセージ・PR・コメント等、GitHub へ記載するものは**すべて日本語**を使用すること
 
 ---
 
