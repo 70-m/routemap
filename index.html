@@ -418,7 +418,7 @@ let selectedMode='driving';
 let gpsMarker=null,gpsAccCircle=null,watchId=null,isTracking=false,gpsLatLng=null;
 let useGpsAsStart=false;
 // デモ
-let demoCoords=[],demoIdx=0,demoRafId=null,demoPaused=true,demoSpeed=1;
+let demoCoords=[],demoIdx=0,demoRafId=null,demoPaused=true,demoSpeed=1,isDemoActive=false;
 let demoMarker=null,demoTrail=null,lastDemoTs=null,demoSteps=[];
 let demoMilestone25=false,demoMilestone50=false,demoMilestone75=false; // デモ進捗マイルストーンフラグ
 let stepMarkers=[];  // 地図上のステップ番号マーカー
@@ -872,6 +872,8 @@ let naviFirstGps = false;
 
 // GPS更新 → 案内ロジック
 function onNaviGps(pos){
+	// デモ走行中はGPS更新を無視する
+	if(isDemoActive){console.log('[onNaviGps] デモ走行中のためGPS更新をスキップ');return;}
 	const lat=pos.coords.latitude,lng=pos.coords.longitude;
 	const acc=pos.coords.accuracy;
 	const curPos=[lat,lng];
@@ -1147,6 +1149,7 @@ function startDemo(){
 	if(demoCoords.length<2){console.warn('[startDemo] ルート座標が不足しているためデモ開始不可');return;}
 	console.log(`[startDemo] デモ走行開始: ${demoCoords.length} 座標点 速度${demoSpeed}×`);
 	stopDemo();stopNavi();
+	isDemoActive=true;
 	// 案内状態を初期化
 	naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviApproaching=false;naviPrevDist=Infinity;naviMuted=false;
 	document.getElementById('navi-mute-btn').textContent='🔊';
@@ -1233,6 +1236,7 @@ function pauseDemo(){console.log('[pauseDemo] デモ一時停止');demoPaused=tr
 function resumeDemo(){console.log('[resumeDemo] デモ再開');demoPaused=false;lastDemoTs=null;document.getElementById('demo-play-btn').textContent='⏸';demoRafId=requestAnimationFrame(demoTick);}
 function stopDemo(){
 	console.log('[stopDemo] デモ走行停止');
+	isDemoActive=false;
 	pauseDemo();naviActive=false;demoIdx=0;
 	demoMilestone25=false;demoMilestone50=false;demoMilestone75=false;
 	if(demoMarker){map.removeLayer(demoMarker);demoMarker=null;}
