@@ -1051,6 +1051,7 @@ function highlightNaviStep(naviIdx){
 	let markerPos=0;
 	demoSteps.forEach(({naviIdx:ni,num},i)=>{
 		const s=naviSteps[ni];
+		if(!s)return;// naviSteps との同期ズレを防ぐ
 		if(s.type==='depart'||s.type==='notification')return;
 		const m=stepMarkers[markerPos++];
 		if(!m)return;
@@ -1178,51 +1179,56 @@ function startDemo(){
 }
 function demoTick(ts){
 	if(demoPaused||demoIdx>=demoCoords.length-1)return;
-	if(!lastDemoTs)lastDemoTs=ts;
-	const dt=Math.min((ts-lastDemoTs)/1000,.1);lastDemoTs=ts;
-	let remain=BASE_SPD*demoSpeed*dt;
-	let curPos=null;
+	try{
+		if(!lastDemoTs)lastDemoTs=ts;
+		const dt=Math.min((ts-lastDemoTs)/1000,.1);lastDemoTs=ts;
+		let remain=BASE_SPD*demoSpeed*dt;
+		let curPos=null;
 
-	while(remain>0&&demoIdx<demoCoords.length-1){
-		const a=demoCoords[demoIdx],b=demoCoords[demoIdx+1];
-		const seg=haversine(a,b);
-		if(remain>=seg){
-			// セグメントを丸ごと通過 → 終点を現在位置として記録
-			remain-=seg;
-			demoIdx++;
-			curPos=demoCoords[demoIdx];
-		}else{
-			// セグメント途中 → 補間して現在位置を計算
-			const t=remain/seg;
-			curPos=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
-			remain=0;
+		while(remain>0&&demoIdx<demoCoords.length-1){
+			const a=demoCoords[demoIdx],b=demoCoords[demoIdx+1];
+			const seg=haversine(a,b);
+			if(remain>=seg){
+				// セグメントを丸ごと通過 → 終点を現在位置として記録
+				remain-=seg;
+				demoIdx++;
+				curPos=demoCoords[demoIdx];
+			}else{
+				// セグメント途中 → 補間して現在位置を計算
+				const t=remain/seg;
+				curPos=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+				remain=0;
+			}
 		}
-	}
 
-	// フレームごとに1回だけマーカー更新・地図追従・案内チェック
-	if(curPos){
-		demoMarker.setLatLng(curPos);
-		demoTrail.addLatLng(curPos);
-		map.setView(curPos,map.getZoom());
-		updateDemoProg();
-		if(naviActive)checkAndSpeak(curPos);
-	}
+		// フレームごとに1回だけマーカー更新・地図追従・案内チェック
+		if(curPos){
+			demoMarker.setLatLng(curPos);
+			demoTrail.addLatLng(curPos);
+			map.setView(curPos,map.getZoom(),{animate:false});// アニメーションなしで即時追従
+			updateDemoProg();
+			if(naviActive)checkAndSpeak(curPos);
+		}
 
-	// 進捗マイルストーンログ（25/50/75/100%）
-	const prog=demoCoords.length>1?(demoIdx/(demoCoords.length-1))*100:0;
-	if(prog>=25&&prog<26&&!demoMilestone25){demoMilestone25=true;console.log('[demoTick] 進捗 25%');}
-	if(prog>=50&&prog<51&&!demoMilestone50){demoMilestone50=true;console.log('[demoTick] 進捗 50%');}
-	if(prog>=75&&prog<76&&!demoMilestone75){demoMilestone75=true;console.log('[demoTick] 進捗 75%');}
+		// 進捗マイルストーンログ（25/50/75/100%）
+		const prog=demoCoords.length>1?(demoIdx/(demoCoords.length-1))*100:0;
+		if(prog>=25&&prog<26&&!demoMilestone25){demoMilestone25=true;console.log('[demoTick] 進捗 25%');}
+		if(prog>=50&&prog<51&&!demoMilestone50){demoMilestone50=true;console.log('[demoTick] 進捗 50%');}
+		if(prog>=75&&prog<76&&!demoMilestone75){demoMilestone75=true;console.log('[demoTick] 進捗 75%');}
 
-	if(demoIdx>=demoCoords.length-1){
-		const last=demoCoords[demoCoords.length-1];
-		demoMarker.setLatLng(last);
-		document.getElementById('demo-play-btn').textContent='▶';
-		document.getElementById('demo-progress-bar').style.width='100%';
-		console.log('[demoTick] デモ走行 100% 完了');
-		speak(makeVoiceText('arrive','','','',null));
-		showStatus('🏁 デモ走行が完了しました','info');
-		naviActive=false;return;
+		if(demoIdx>=demoCoords.length-1){
+			const last=demoCoords[demoCoords.length-1];
+			demoMarker.setLatLng(last);
+			document.getElementById('demo-play-btn').textContent='▶';
+			document.getElementById('demo-progress-bar').style.width='100%';
+			console.log('[demoTick] デモ走行 100% 完了');
+			speak(makeVoiceText('arrive','','','',null));
+			showStatus('🏁 デモ走行が完了しました','info');
+			naviActive=false;return;
+		}
+	}catch(e){
+		// 例外が発生しても RAF ループを継続し、ログに記録する
+		console.error(`[demoTick] 例外発生（ループ継続）: ${e.message}`,e);
 	}
 	demoRafId=requestAnimationFrame(demoTick);
 }
