@@ -1147,8 +1147,9 @@ document.getElementById('navi-mute-btn').addEventListener('click',()=>{
 // ════════════════════════════════════════════════
 const BASE_SPD=60;
 function startDemo(){
-	if(demoCoords.length<2){console.warn('[startDemo] ルート座標が不足しているためデモ開始不可');return;}
+	if(demoCoords.length<2){console.warn('[startDemo] ルート座標が不足しているためデモ開始不可');logDebug('[startDemo] 座標不足のため開始不可');return;}
 	console.log(`[startDemo] デモ走行開始: ${demoCoords.length} 座標点 速度${demoSpeed}×`);
+	logDebug(`[startDemo] 開始 座標数:${demoCoords.length}`);
 	stopDemo();stopNavi();
 	isDemoActive=true;
 	// 案内状態を初期化
@@ -1169,13 +1170,15 @@ function startDemo(){
 	demoMarker=L.marker(demoCoords[0],{icon:carIcon,zIndexOffset:1000}).addTo(map);
 	demoTrail=L.polyline([demoCoords[0]],{color:'#f5c518',weight:3,opacity:.7}).addTo(map);
 	document.getElementById('demo-play-btn').textContent='⏸';
-	goToMap();setTimeout(()=>map.setView(demoCoords[0],16),100);
+	goToMap();setTimeout(()=>map.setView(demoCoords[0],16,{animate:false}),100);
 	speak(makeVoiceText('depart','','','',null));
 	// デモ開始位置がルート先頭でない場合に備えてシーク
 	seekNearestStep(demoCoords[0]);
 	updateNaviBanner(naviCurrentStepIdx,null);
 	highlightNaviStep(naviCurrentStepIdx);
+	logDebug('[startDemo] RAF 登録直前');
 	demoRafId=requestAnimationFrame(demoTick);
+	logDebug('[startDemo] RAF 登録完了 → demoTick 待機中');
 }
 function demoTick(ts){
 	if(demoPaused||demoIdx>=demoCoords.length-1)return;
@@ -1212,9 +1215,9 @@ function demoTick(ts){
 
 		// 進捗マイルストーンログ（25/50/75/100%）
 		const prog=demoCoords.length>1?(demoIdx/(demoCoords.length-1))*100:0;
-		if(prog>=25&&prog<26&&!demoMilestone25){demoMilestone25=true;console.log('[demoTick] 進捗 25%');}
-		if(prog>=50&&prog<51&&!demoMilestone50){demoMilestone50=true;console.log('[demoTick] 進捗 50%');}
-		if(prog>=75&&prog<76&&!demoMilestone75){demoMilestone75=true;console.log('[demoTick] 進捗 75%');}
+		if(prog>=25&&prog<26&&!demoMilestone25){demoMilestone25=true;console.log('[demoTick] 進捗 25%');logDebug('[demoTick] 進捗 25%');}
+		if(prog>=50&&prog<51&&!demoMilestone50){demoMilestone50=true;console.log('[demoTick] 進捗 50%');logDebug('[demoTick] 進捗 50%');}
+		if(prog>=75&&prog<76&&!demoMilestone75){demoMilestone75=true;console.log('[demoTick] 進捗 75%');logDebug('[demoTick] 進捗 75%');}
 
 		if(demoIdx>=demoCoords.length-1){
 			const last=demoCoords[demoCoords.length-1];
@@ -1222,6 +1225,7 @@ function demoTick(ts){
 			document.getElementById('demo-play-btn').textContent='▶';
 			document.getElementById('demo-progress-bar').style.width='100%';
 			console.log('[demoTick] デモ走行 100% 完了');
+			logDebug('[demoTick] デモ走行 100% 完了');
 			speak(makeVoiceText('arrive','','','',null));
 			showStatus('🏁 デモ走行が完了しました','info');
 			naviActive=false;return;
@@ -1229,6 +1233,7 @@ function demoTick(ts){
 	}catch(e){
 		// 例外が発生しても RAF ループを継続し、ログに記録する
 		console.error(`[demoTick] 例外発生（ループ継続）: ${e.message}`,e);
+		logError(`[demoTick] 例外: ${e.message}`);
 	}
 	demoRafId=requestAnimationFrame(demoTick);
 }
@@ -1333,6 +1338,11 @@ function logVoice(text){
 }
 function logError(msg){
 	const e=makeEntry('err',`エラー: ${msg}`,()=>`<div class="log-raw">${escHtml(msg)}</div>`);
+	prependToPane('pane-all',e);
+}
+// デバッグ用ログ（アプリ内ログパネルに出力）
+function logDebug(msg){
+	const e=makeEntry('info',msg,()=>`<div class="log-raw">${escHtml(msg)}</div>`);
 	prependToPane('pane-all',e);
 }
 function logRouteResponse(data){
