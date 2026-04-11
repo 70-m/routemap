@@ -22,6 +22,8 @@ html,body{height:100%;overflow:hidden;font-family:'Noto Sans JP',sans-serif;back
 #topbar{height:var(--topbar);min-height:var(--topbar);background:var(--panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0;}
 .logo{font-family:'Space Mono',monospace;font-size:15px;font-weight:700;color:var(--accent);white-space:nowrap;}
 .logo span{color:var(--text);}
+/* アプリバージョン表示 */
+#app-version{margin-left:auto;font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:.4px;white-space:nowrap;}
 
 /* ── タブバー ── */
 #tabbar{height:var(--tabh);min-height:var(--tabh);background:var(--panel);border-bottom:1px solid var(--border);display:flex;flex-shrink:0;}
@@ -233,7 +235,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 <body>
 <div id="app">
 	<!-- トップバー（モバイル） -->
-	<div id="topbar"><div class="logo">Route<span>Map</span></div></div>
+	<div id="topbar"><div class="logo">Route<span>Map</span></div><div id="app-version"></div></div>
 
 	<!-- タブバー -->
 	<div id="tabbar">
@@ -392,6 +394,13 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 'use strict';
+// ════════════════════════════════════════════════
+//  アプリバージョン
+// ════════════════════════════════════════════════
+const APP_VERSION='260411PR34';
+document.getElementById('app-version').textContent=APP_VERSION;
+console.log(`[App] バージョン: ${APP_VERSION}`);
+
 // ════════════════════════════════════════════════
 //  タブ切り替え
 // ════════════════════════════════════════════════
