@@ -397,7 +397,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260411PR34';
+const APP_VERSION='260412PR35';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -1179,7 +1179,8 @@ function startDemo(){
 	demoMarker=L.marker(demoCoords[0],{icon:carIcon,zIndexOffset:1000}).addTo(map);
 	demoTrail=L.polyline([demoCoords[0]],{color:'#f5c518',weight:3,opacity:.7}).addTo(map);
 	document.getElementById('demo-play-btn').textContent='⏸';
-	goToMap();setTimeout(()=>map.setView(demoCoords[0],16,{animate:false}),100);
+	// ルート全体が見えるように fitBounds → 車がルート上を移動するのが視覚的にわかる
+	goToMap();setTimeout(()=>map.fitBounds(L.latLngBounds(demoCoords),{padding:[40,40],animate:false}),100);
 	speak(makeVoiceText('depart','','','',null));
 	// デモ開始位置がルート先頭でない場合に備えてシーク
 	seekNearestStep(demoCoords[0]);
@@ -1213,11 +1214,11 @@ function demoTick(ts){
 			}
 		}
 
-		// フレームごとに1回だけマーカー更新・地図追従・案内チェック
+		// フレームごとに1回だけマーカー更新・案内チェック
+		// ※ map.setView は呼ばない → 地図が車を追わず、車がルート上を視覚的に移動する
 		if(curPos){
 			demoMarker.setLatLng(curPos);
 			demoTrail.addLatLng(curPos);
-			map.setView(curPos,map.getZoom(),{animate:false});// アニメーションなしで即時追従
 			updateDemoProg();
 			if(naviActive)checkAndSpeak(curPos);
 		}
