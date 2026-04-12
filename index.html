@@ -397,7 +397,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260412PR36';
+const APP_VERSION='260412PR37';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -428,7 +428,7 @@ let gpsMarker=null,gpsAccCircle=null,watchId=null,isTracking=false,gpsLatLng=nul
 let useGpsAsStart=false;
 // デモ
 let demoCoords=[],demoIdx=0,demoRafId=null,demoPaused=true,demoSpeed=1,isDemoActive=false;
-let demoMarker=null,demoTrail=null,lastDemoTs=null,demoSteps=[];
+let demoMarker=null,demoTrail=null,lastDemoTs=null,demoSteps=[],demoLogIntervalId=null;
 let demoMilestone25=false,demoMilestone50=false,demoMilestone75=false; // デモ進捗マイルストーンフラグ
 let stepMarkers=[];  // 地図上のステップ番号マーカー
 // ログ
@@ -1191,6 +1191,13 @@ function startDemo(){
 		const el=demoMarker&&demoMarker.getElement();
 		if(el){el.style.transition='none';el.style.webkitTransition='none';}
 		logDebug('[startDemo] RAF 登録直前');
+		// 1秒ごとに自車位置をログ出力（デモ走行の動作診断用）
+		if(demoLogIntervalId){clearInterval(demoLogIntervalId);demoLogIntervalId=null;}
+		demoLogIntervalId=setInterval(()=>{
+			const pos=demoMarker?demoMarker.getLatLng():null;
+			const posStr=pos?`[${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}]`:'null';
+			logDebug(`[demoPos] idx:${demoIdx}/${demoCoords.length-1} pos:${posStr} paused:${demoPaused} navi:${naviActive}`);
+		},1000);
 		demoRafId=requestAnimationFrame(demoTick);
 		logDebug('[startDemo] RAF 登録完了 → demoTick 待機中');
 	},100);
@@ -1262,6 +1269,7 @@ function pauseDemo(){console.log('[pauseDemo] デモ一時停止');demoPaused=tr
 function resumeDemo(){console.log('[resumeDemo] デモ再開');demoPaused=false;lastDemoTs=null;document.getElementById('demo-play-btn').textContent='⏸';demoRafId=requestAnimationFrame(demoTick);}
 function stopDemo(){
 	console.log('[stopDemo] デモ走行停止');
+	if(demoLogIntervalId){clearInterval(demoLogIntervalId);demoLogIntervalId=null;}
 	isDemoActive=false;
 	pauseDemo();naviActive=false;demoIdx=0;
 	demoMilestone25=false;demoMilestone50=false;demoMilestone75=false;
