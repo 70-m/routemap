@@ -397,7 +397,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260412PR35';
+const APP_VERSION='260412PR36';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -1175,20 +1175,25 @@ function startDemo(){
 	demoMilestone25=false;demoMilestone50=false;demoMilestone75=false;
 	document.getElementById('demo-progress-bar').style.width='0%';
 	if(demoMarker)map.removeLayer(demoMarker);
-	if(demoTrail)map.removeLayer(demoTrail);
+	if(demoTrail){map.removeLayer(demoTrail);demoTrail=null;}
 	demoMarker=L.marker(demoCoords[0],{icon:carIcon,zIndexOffset:1000}).addTo(map);
-	demoTrail=L.polyline([demoCoords[0]],{color:'#f5c518',weight:3,opacity:.7}).addTo(map);
+	// demoTrail（軌跡ポリライン）は廃止：毎フレームのSVG再描画がRAFを著しく低速化するため
 	document.getElementById('demo-play-btn').textContent='⏸';
-	// ルート全体が見えるように fitBounds → 車がルート上を移動するのが視覚的にわかる
-	goToMap();setTimeout(()=>map.fitBounds(L.latLngBounds(demoCoords),{padding:[40,40],animate:false}),100);
 	speak(makeVoiceText('depart','','','',null));
 	// デモ開始位置がルート先頭でない場合に備えてシーク
 	seekNearestStep(demoCoords[0]);
 	updateNaviBanner(naviCurrentStepIdx,null);
 	highlightNaviStep(naviCurrentStepIdx);
-	logDebug('[startDemo] RAF 登録直前');
-	demoRafId=requestAnimationFrame(demoTick);
-	logDebug('[startDemo] RAF 登録完了 → demoTick 待機中');
+	// fitBounds 後に RAF 開始：ズームアニメーション中の CSS transition 競合を防止する
+	goToMap();setTimeout(()=>{
+		map.fitBounds(L.latLngBounds(demoCoords),{padding:[40,40],animate:false});
+		// マーカーの CSS transition を無効化してカクつき・バウンスを防ぐ
+		const el=demoMarker&&demoMarker.getElement();
+		if(el){el.style.transition='none';el.style.webkitTransition='none';}
+		logDebug('[startDemo] RAF 登録直前');
+		demoRafId=requestAnimationFrame(demoTick);
+		logDebug('[startDemo] RAF 登録完了 → demoTick 待機中');
+	},100);
 }
 function demoTick(ts){
 	if(demoPaused||demoIdx>=demoCoords.length-1)return;
@@ -1218,7 +1223,7 @@ function demoTick(ts){
 		// ※ map.setView は呼ばない → 地図が車を追わず、車がルート上を視覚的に移動する
 		if(curPos){
 			demoMarker.setLatLng(curPos);
-			demoTrail.addLatLng(curPos);
+			// demoTrail は廃止（毎フレームのSVG再描画がRAFを低速化するため）
 			updateDemoProg();
 			if(naviActive)checkAndSpeak(curPos);
 		}
