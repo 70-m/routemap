@@ -397,7 +397,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260412PR37';
+const APP_VERSION='260412PR38';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -440,6 +440,7 @@ let naviMuted=false;            // ミュート
 let naviSpoken={};              // 発話済み管理 {stepIdx_phase: true}
 let naviWatchId=null;           // GPS watch ID（案内用）
 let naviCurrentStepIdx=0;       // 現在のステップインデックス
+let lastHighlightedStep=-1;     // 直前にハイライトしたステップ（毎フレーム呼び出し抑止用）
 let naviRerouteTimer=null;      // リルートクールダウン
 let lastRerouteTime=0;
 let wakeLock=null;
@@ -1028,9 +1029,13 @@ function checkAndSpeak(curPos){
 		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now'));
 	}
 
-	// バナー・ハイライトは必ず毎回更新
+	// バナーは距離が変わるため毎フレーム更新
 	updateNaviBanner(naviCurrentStepIdx, dist);
-	highlightNaviStep(naviCurrentStepIdx);
+	// ハイライトはステップが変化したときのみ更新（毎フレーム呼ぶと地図の repaint でRAFが停止するため）
+	if(naviCurrentStepIdx!==lastHighlightedStep){
+		lastHighlightedStep=naviCurrentStepIdx;
+		highlightNaviStep(naviCurrentStepIdx);
+	}
 }
 
 // 案内バナー更新
@@ -1162,7 +1167,7 @@ function startDemo(){
 	stopDemo();stopNavi();
 	isDemoActive=true;
 	// 案内状態を初期化
-	naviActive=true;naviSpoken={};naviCurrentStepIdx=0;naviApproaching=false;naviPrevDist=Infinity;naviMuted=false;
+	naviActive=true;naviSpoken={};naviCurrentStepIdx=0;lastHighlightedStep=-1;naviApproaching=false;naviPrevDist=Infinity;naviMuted=false;
 	document.getElementById('navi-mute-btn').textContent='🔊';
 	document.getElementById('navi-section').style.display='block';
 	document.getElementById('navi-bar').classList.add('visible');
