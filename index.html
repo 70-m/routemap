@@ -397,7 +397,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260412PR38';
+const APP_VERSION='260412PR40';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -1195,7 +1195,7 @@ function startDemo(){
 		// マーカーの CSS transition を無効化してカクつき・バウンスを防ぐ
 		const el=demoMarker&&demoMarker.getElement();
 		if(el){el.style.transition='none';el.style.webkitTransition='none';}
-		logDebug('[startDemo] RAF 登録直前');
+		logDebug('[startDemo] インターバルタイマー登録直前');
 		// 1秒ごとに自車位置をログ出力（デモ走行の動作診断用）
 		if(demoLogIntervalId){clearInterval(demoLogIntervalId);demoLogIntervalId=null;}
 		demoLogIntervalId=setInterval(()=>{
@@ -1203,8 +1203,9 @@ function startDemo(){
 			const posStr=pos?`[${pos.lat.toFixed(5)},${pos.lng.toFixed(5)}]`:'null';
 			logDebug(`[demoPos] idx:${demoIdx}/${demoCoords.length-1} pos:${posStr} paused:${demoPaused} navi:${naviActive}`);
 		},1000);
-		demoRafId=requestAnimationFrame(demoTick);
-		logDebug('[startDemo] RAF 登録完了 → demoTick 待機中');
+		// RAF はブラウザのアイドル最適化でスロットリングされるため setInterval を使用する
+		demoRafId=setInterval(()=>demoTick(performance.now()),33);
+		logDebug('[startDemo] インターバルタイマー登録完了 → demoTick 開始');
 	},100);
 }
 function demoTick(ts){
@@ -1255,14 +1256,16 @@ function demoTick(ts){
 			logDebug('[demoTick] デモ走行 100% 完了');
 			speak(makeVoiceText('arrive','','','',null));
 			showStatus('🏁 デモ走行が完了しました','info');
+			// 完走時にインターバルをクリアして余分な処理を止める
+			if(demoRafId){clearInterval(demoRafId);demoRafId=null;}
 			naviActive=false;return;
 		}
 	}catch(e){
-		// 例外が発生しても RAF ループを継続し、ログに記録する
+		// 例外が発生してもインターバルループを継続し、ログに記録する
 		console.error(`[demoTick] 例外発生（ループ継続）: ${e.message}`,e);
 		logError(`[demoTick] 例外: ${e.message}`);
 	}
-	demoRafId=requestAnimationFrame(demoTick);
+	// setInterval により自動的に次回呼び出しが行われるため RAF 再登録は不要
 }
 function haversine(a,b){
 	const R=6371000,dLat=(b[0]-a[0])*Math.PI/180,dLng=(b[1]-a[1])*Math.PI/180;
@@ -1270,8 +1273,8 @@ function haversine(a,b){
 	return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 function updateDemoProg(){const p=demoCoords.length>1?(demoIdx/(demoCoords.length-1))*100:0;document.getElementById('demo-progress-bar').style.width=p+'%';}
-function pauseDemo(){console.log('[pauseDemo] デモ一時停止');demoPaused=true;if(demoRafId){cancelAnimationFrame(demoRafId);demoRafId=null;}document.getElementById('demo-play-btn').textContent='▶';}
-function resumeDemo(){console.log('[resumeDemo] デモ再開');demoPaused=false;lastDemoTs=null;document.getElementById('demo-play-btn').textContent='⏸';demoRafId=requestAnimationFrame(demoTick);}
+function pauseDemo(){console.log('[pauseDemo] デモ一時停止');demoPaused=true;if(demoRafId){clearInterval(demoRafId);demoRafId=null;}document.getElementById('demo-play-btn').textContent='▶';}
+function resumeDemo(){console.log('[resumeDemo] デモ再開');demoPaused=false;lastDemoTs=null;document.getElementById('demo-play-btn').textContent='⏸';demoRafId=setInterval(()=>demoTick(performance.now()),33);}
 function stopDemo(){
 	console.log('[stopDemo] デモ走行停止');
 	if(demoLogIntervalId){clearInterval(demoLogIntervalId);demoLogIntervalId=null;}
