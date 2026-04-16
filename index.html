@@ -127,7 +127,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 .demo-btn{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:6px 10px;cursor:pointer;transition:all .2s;}
 .demo-btn:hover{border-color:var(--demo);color:var(--demo);}
 #demo-speed-label{font-size:11px;color:var(--muted);margin-left:auto;font-family:'Space Mono',monospace;}
-#demo-progress{height:3px;background:var(--border);border-radius:2px;overflow:hidden;}
+#demo-progress{height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
 #demo-progress-bar{height:100%;background:var(--demo);width:0%;border-radius:2px;transition:width .15s linear;}
 
 /* ── ステップ ── */
@@ -336,7 +336,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 						<button class="demo-btn" id="demo-stop-btn">⏹</button>
 						<button class="demo-btn" id="demo-slower-btn">🐢</button>
 						<button class="demo-btn" id="demo-faster-btn">🐇</button>
-						<span id="demo-speed-label">1×</span>
+						<span id="demo-speed-label">5×</span>
 					</div>
 					<div id="demo-progress"><div id="demo-progress-bar"></div></div>
 				</div>
@@ -427,7 +427,7 @@ let selectedMode='driving';
 let gpsMarker=null,gpsAccCircle=null,watchId=null,isTracking=false,gpsLatLng=null;
 let useGpsAsStart=false;
 // デモ
-let demoCoords=[],demoIdx=0,demoRafId=null,demoPaused=true,demoSpeed=1,isDemoActive=false;
+let demoCoords=[],demoIdx=0,demoFrac=0,demoRafId=null,demoPaused=true,demoSpeed=5,isDemoActive=false;
 let demoMarker=null,demoTrail=null,lastDemoTs=null,demoSteps=[],demoLogIntervalId=null;
 let demoMilestone25=false,demoMilestone50=false,demoMilestone75=false; // デモ進捗マイルストーンフラグ
 let stepMarkers=[];  // 地図上のステップ番号マーカー
@@ -1063,6 +1063,9 @@ function updateNaviBanner(stepIdx,dist){
 // ステップ一覧のハイライト（naviCurrentStepIdx と demoSteps の naviIdx で照合）
 function highlightNaviStep(naviIdx){
 	demoSteps.forEach(({el,naviIdx:ni})=>el.classList.toggle('active-step',ni===naviIdx));
+	// アクティブなステップをリスト内にスクロールして見せる
+	const activeItem=demoSteps.find(({naviIdx:ni})=>ni===naviIdx);
+	if(activeItem?.el)activeItem.el.scrollIntoView({behavior:'smooth',block:'nearest'});
 	// 地図上のステップマーカーも強調（アクティブなもの以外を薄く）
 	let markerPos=0;
 	demoSteps.forEach(({naviIdx:ni,num},i)=>{
@@ -1177,7 +1180,7 @@ function startDemo(){
 	document.getElementById('map-navi-overlay').classList.add('visible');
 	document.getElementById('demo-section').style.display='block';
 	document.getElementById('demo-bar').classList.add('visible');
-	demoIdx=0;demoPaused=false;lastDemoTs=null;
+	demoIdx=0;demoFrac=0;demoPaused=false;lastDemoTs=null;
 	// マイルストーンフラグ初期化
 	demoMilestone25=false;demoMilestone50=false;demoMilestone75=false;
 	document.getElementById('demo-progress-bar').style.width='0%';
@@ -1221,15 +1224,18 @@ function demoTick(ts){
 		while(remain>0&&demoIdx<demoCoords.length-1){
 			const a=demoCoords[demoIdx],b=demoCoords[demoIdx+1];
 			const seg=haversine(a,b);
-			if(remain>=seg){
-				// セグメントを丸ごと通過 → 終点を現在位置として記録
-				remain-=seg;
+			// demoFrac: 現在セグメント内の累積進捗割合（0.0〜1.0）を保持し、毎ティック先頭に戻る振動バグを防ぐ
+			const segRemain=seg*(1-demoFrac); // セグメント内の残り距離
+			if(remain>=segRemain){
+				// 残りセグメントを丸ごと通過 → 次セグメントへ
+				remain-=segRemain;
 				demoIdx++;
+				demoFrac=0;
 				curPos=demoCoords[demoIdx];
 			}else{
-				// セグメント途中 → 補間して現在位置を計算
-				const t=remain/seg;
-				curPos=[a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+				// セグメント途中 → 割合を累積して次ティックに引き継ぐ
+				demoFrac+=remain/seg;
+				curPos=[a[0]+(b[0]-a[0])*demoFrac, a[1]+(b[1]-a[1])*demoFrac];
 				remain=0;
 			}
 		}
@@ -1281,7 +1287,7 @@ function stopDemo(){
 	console.log('[stopDemo] デモ走行停止');
 	if(demoLogIntervalId){clearInterval(demoLogIntervalId);demoLogIntervalId=null;}
 	isDemoActive=false;
-	pauseDemo();naviActive=false;demoIdx=0;
+	pauseDemo();naviActive=false;demoIdx=0;demoFrac=0;
 	demoMilestone25=false;demoMilestone50=false;demoMilestone75=false;
 	if(demoMarker){map.removeLayer(demoMarker);demoMarker=null;}
 	if(demoTrail){map.removeLayer(demoTrail);demoTrail=null;}
