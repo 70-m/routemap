@@ -409,9 +409,9 @@ document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
 	document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
 	t.classList.add('active');
 	document.getElementById('view-'+t.dataset.view).classList.add('active');
-	if(t.dataset.view==='map') setTimeout(()=>map&&map.invalidateSize(),50);
+	if(t.dataset.view==='map') setTimeout(()=>map&&map.invalidateSize({animate:false}),50);
 }));
-function goToMap(){if(window.innerWidth<900){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.querySelector('[data-view="map"]').classList.add('active');document.getElementById('view-map').classList.add('active');setTimeout(()=>map&&map.invalidateSize(),50);}}
+function goToMap(){if(window.innerWidth<900){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));document.querySelector('[data-view="map"]').classList.add('active');document.getElementById('view-map').classList.add('active');setTimeout(()=>map&&map.invalidateSize({animate:false}),50);}}
 
 // ════════════════════════════════════════════════
 //  地図初期化
@@ -441,6 +441,7 @@ let naviSpoken={};              // 発話済み管理 {stepIdx_phase: true}
 let naviWatchId=null;           // GPS watch ID（案内用）
 let naviCurrentStepIdx=0;       // 現在のステップインデックス
 let lastHighlightedStep=-1;     // 直前にハイライトしたステップ（毎フレーム呼び出し抑止用）
+let lastBannerUpdateTime=0;     // バナー最終更新時刻（可視要素への repaint 抑止用）
 let naviRerouteTimer=null;      // リルートクールダウン
 let lastRerouteTime=0;
 let wakeLock=null;
@@ -1029,8 +1030,9 @@ function checkAndSpeak(curPos){
 		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now'));
 	}
 
-	// バナーは距離が変わるため毎フレーム更新
-	updateNaviBanner(naviCurrentStepIdx, dist);
+	// バナーは約 300ms ごとに更新（可視 DOM への毎フレーム repaint を防ぐ）
+	const _bNow=performance.now();
+	if(_bNow-lastBannerUpdateTime>=300){lastBannerUpdateTime=_bNow;updateNaviBanner(naviCurrentStepIdx,dist);}
 	// ハイライトはステップが変化したときのみ更新（毎フレーム呼ぶと地図の repaint でRAFが停止するため）
 	if(naviCurrentStepIdx!==lastHighlightedStep){
 		lastHighlightedStep=naviCurrentStepIdx;
