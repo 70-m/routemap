@@ -107,6 +107,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 #navi-text-block{flex:1;min-width:0;}
 #navi-dist-label{font-family:'Space Mono',monospace;font-size:11px;color:var(--nav);font-weight:700;}
 #navi-instruction{font-size:13px;color:var(--text);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#navi-sub-info{font-size:10px;color:var(--nav);opacity:.8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 /* コントロール行 */
 #navi-controls{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid rgba(167,139,250,.2);background:rgba(167,139,250,.04);}
@@ -138,6 +139,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 .step-num{font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);min-width:18px;padding-top:1px;}
 .step-text{flex:1;line-height:1.5;}
 .step-dist{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);white-space:nowrap;}
+.step-sub{font-size:9px;color:var(--nav);opacity:.75;}
 
 /* ════ MAPタブ ════ */
 #view-map{position:relative;}
@@ -159,6 +161,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 #map-navi-info{flex:1;min-width:0;}
 #map-navi-dist{font-family:'Space Mono',monospace;font-size:13px;color:var(--nav);font-weight:700;}
 #map-navi-text{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#map-navi-sub{font-size:11px;color:var(--nav);opacity:.8;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
 /* ════ LOGタブ ════ */
 #view-log{flex-direction:column;}
@@ -315,6 +318,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 						<div id="navi-text-block">
 							<div id="navi-dist-label">—</div>
 							<div id="navi-instruction">案内を準備中...</div>
+							<div id="navi-sub-info" style="display:none;"></div>
 						</div>
 					</div>
 					<div id="navi-offroute">⚠ ルートを外れました。再探索中...</div>
@@ -360,6 +364,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 					<div id="map-navi-info">
 						<div id="map-navi-dist">—</div>
 						<div id="map-navi-text">案内中...</div>
+						<div id="map-navi-sub" style="display:none;"></div>
 					</div>
 				</div>
 			</div>
@@ -490,7 +495,7 @@ function speak(text){
 // ════════════════════════════════════════════════
 //  maneuver → 音声テキスト生成（全type対応）
 // ════════════════════════════════════════════════
-function makeVoiceText(type,modifier,roadName,distM,phase){
+function makeVoiceText(type,modifier,roadName,distM,phase,ref,destinations,exits){
 	const road=roadName?`「${roadName}」`:'';
 	const distStr=distM>=1000?`${Math.round(distM/100)*100}メートル`
 		:distM>=100?`${Math.round(distM/50)*50}メートル`
@@ -517,29 +522,38 @@ function makeVoiceText(type,modifier,roadName,distM,phase){
 			return '案内を開始します。出発してください。';
 		case 'arrive':
 			return '目的地付近です。案内を終了します。';
-		case 'turn':
+		case 'turn': {
 			if(modifier==='uturn') return `${prefix}Uターンしてください。`;
-			return `${prefix}${dir}してください。${road}`;
+			const refStr=ref?`${ref}です。`:'';
+			return `${prefix}${dir}してください。${road}${refStr}`;
+		}
 		case 'continue':
 			return phase==='prep'?`${distStr}先、直進です。${road}`:'そのまま直進です。';
 		case 'new name':
 			return phase==='prep'?`${distStr}先、道なりに進んでください。${road}`:'道なりに進んでください。';
-		case 'fork':
-			if(modifier==='slight right'||modifier==='right') return `${prefix}右方向に進んでください。${road}`;
-			if(modifier==='slight left'||modifier==='left')  return `${prefix}左方向に進んでください。${road}`;
-			return `${prefix}分岐を直進してください。${road}`;
+		case 'fork': {
+			const destStr=destinations?`${destinations}方面へ。`:'';
+			if(modifier==='slight right'||modifier==='right') return `${prefix}右方向に進んでください。${destStr}${road}`;
+			if(modifier==='slight left'||modifier==='left')  return `${prefix}左方向に進んでください。${destStr}${road}`;
+			return `${prefix}分岐を直進してください。${destStr}${road}`;
+		}
 		case 'merge':
 			if(modifier==='right') return `${prefix}右から合流してください。`;
 			if(modifier==='left')  return `${prefix}左から合流してください。`;
 			return `${prefix}合流してください。`;
-		case 'on ramp':
-			if(modifier==='right') return `${prefix}右のランプから進入してください。`;
-			if(modifier==='left')  return `${prefix}左のランプから進入してください。`;
-			return `${prefix}ランプから進入してください。`;
-		case 'off ramp':
-			if(modifier==='right') return `${prefix}右の出口から出てください。`;
-			if(modifier==='left')  return `${prefix}左の出口から出てください。`;
-			return `${prefix}出口から出てください。`;
+		case 'on ramp': {
+			const destStr=destinations?`${destinations}方面へ。`:'';
+			if(modifier==='right') return `${prefix}右のランプから進入してください。${destStr}`;
+			if(modifier==='left')  return `${prefix}左のランプから進入してください。${destStr}`;
+			return `${prefix}ランプから進入してください。${destStr}`;
+		}
+		case 'off ramp': {
+			const destStr=destinations?`${destinations}方面。`:'';
+			if(exits) return `${prefix}出口${exits}から出てください。${destStr}`;
+			if(modifier==='right') return `${prefix}右の出口から出てください。${destStr}`;
+			if(modifier==='left')  return `${prefix}左の出口から出てください。${destStr}`;
+			return `${prefix}出口から出てください。${destStr}`;
+		}
 		case 'end of road':
 			if(modifier==='right')    return `${prefix}突き当たりを右折してください。`;
 			if(modifier==='left')     return `${prefix}突き当たりを左折してください。`;
@@ -557,6 +571,10 @@ function makeVoiceText(type,modifier,roadName,distM,phase){
 			const name=naviSteps[naviCurrentStepIdx]?.rotary_name||'ロータリー';
 			return `${prefix}${name}に入り、${exitStr}出てください。`;
 		}
+		case 'exit_roundabout':
+			return `${prefix}ラウンドアバウトを出てください。${road}`;
+		case 'exit_rotary':
+			return `${prefix}ロータリーを出てください。${road}`;
 		case 'notification':
 			return ''; // スキップ
 		default:
@@ -564,11 +582,21 @@ function makeVoiceText(type,modifier,roadName,distM,phase){
 	}
 }
 
+// exits / destinations / ref をサブ情報文字列として整形
+function makeSubInfo(step){
+	const parts=[];
+	if(step.exits)        parts.push(`出口 ${step.exits}`);
+	if(step.destinations) parts.push(`${step.destinations}方面`);
+	if(step.ref)          parts.push(step.ref);
+	return parts.join('  ');
+}
+
 // maneuver → 矢印絵文字
 function maneuverArrow(type,modifier){
 	if(type==='arrive') return '🏁';
 	if(type==='depart') return '🚀';
 	if(type==='roundabout'||type==='rotary'||type==='roundabout turn') return '🔄';
+	if(type==='exit_roundabout'||type==='exit_rotary') return '↪';
 	if(type==='on ramp') return '↗';
 	if(type==='off ramp') return '↙';
 	if(type==='fork'){return modifier?.includes('right')?'↗':'↖';}
@@ -587,27 +615,30 @@ function maneuverArrow(type,modifier){
 }
 
 // maneuver → 表示テキスト（バナー用）
-function maneuverLabel(type,modifier,roadName){
+function maneuverLabel(type,modifier,roadName,ref,destinations,exits){
 	const road=roadName?`「${roadName}」`:'';
+	const refStr=ref?` (${ref})`:'';
 	switch(type){
 		case 'depart': return '出発';
 		case 'arrive': return '目的地に到着';
 		case 'turn':
 			if(modifier==='uturn') return 'Uターン';
-			if(modifier==='sharp right') return `鋭角右折 ${road}`;
-			if(modifier==='right') return `右折 ${road}`;
-			if(modifier==='slight right') return `やや右 ${road}`;
-			if(modifier==='straight') return `直進 ${road}`;
-			if(modifier==='slight left') return `やや左 ${road}`;
-			if(modifier==='left') return `左折 ${road}`;
-			if(modifier==='sharp left') return `鋭角左折 ${road}`;
-			return `曲がる ${road}`;
-		case 'continue': return `直進 ${road}`;
-		case 'new name': return `道なり ${road}`;
-		case 'fork': return modifier?.includes('right')?`右方向 ${road}`:`左方向 ${road}`;
+			if(modifier==='sharp right') return `鋭角右折 ${road}${refStr}`;
+			if(modifier==='right') return `右折 ${road}${refStr}`;
+			if(modifier==='slight right') return `やや右 ${road}${refStr}`;
+			if(modifier==='straight') return `直進 ${road}${refStr}`;
+			if(modifier==='slight left') return `やや左 ${road}${refStr}`;
+			if(modifier==='left') return `左折 ${road}${refStr}`;
+			if(modifier==='sharp left') return `鋭角左折 ${road}${refStr}`;
+			return `曲がる ${road}${refStr}`;
+		case 'continue': return `直進 ${road}${refStr}`;
+		case 'new name': return `道なり ${road}${refStr}`;
+		case 'fork': return modifier?.includes('right')
+			?`右方向 ${destinations||road}`
+			:`左方向 ${destinations||road}`;
 		case 'merge': return `合流 ${road}`;
-		case 'on ramp': return `ランプ進入 ${road}`;
-		case 'off ramp': return `出口 ${road}`;
+		case 'on ramp': return destinations?`ランプ進入 ${destinations}方面`:`ランプ進入 ${road}`;
+		case 'off ramp': return exits?`出口${exits} ${road}`:`出口 ${road}`;
 		case 'end of road':
 			if(modifier==='right') return `突き当たり右折 ${road}`;
 			if(modifier==='left')  return `突き当たり左折 ${road}`;
@@ -615,6 +646,8 @@ function maneuverLabel(type,modifier,roadName){
 		case 'roundabout':
 		case 'roundabout turn': return 'ラウンドアバウト';
 		case 'rotary': return 'ロータリー';
+		case 'exit_roundabout': return 'ラウンドアバウト退出';
+		case 'exit_rotary': return 'ロータリー退出';
 		default: return road||type;
 	}
 }
@@ -743,7 +776,10 @@ async function searchRoute(){
 					distance:step.distance,
 					duration:step.duration,
 					exit:step.maneuver?.exit,
-					rotary_name:step.rotary_name||''
+					rotary_name:step.rotary_name||'',
+					ref:step.ref||'',
+					destinations:step.destinations||'',
+					exits:step.exits||''
 				});
 			});
 		});
@@ -791,7 +827,12 @@ function rebuildStepMarkersAndList(route){
 		const num=n++;
 		const d=step.distance<1000?`${step.distance.toFixed(0)}m`:`${(step.distance/1000).toFixed(1)}km`;
 		const el=document.createElement('div');el.className='step-item';
-		el.innerHTML=`<span class="step-num">${num}</span><span class="step-text">${maneuverArrow(step.type,step.modifier)} ${maneuverLabel(step.type,step.modifier,step.name)}</span><span class="step-dist">${d}</span>`;
+		const sub=makeSubInfo(step);
+		el.innerHTML=`<span class="step-num">${num}</span>`
+			+`<span class="step-text">${maneuverArrow(step.type,step.modifier)} ${maneuverLabel(step.type,step.modifier,step.name,step.ref,step.destinations,step.exits)}`
+			+(sub?`<br><span class="step-sub">${sub}</span>`:'')
+			+`</span>`
+			+`<span class="step-dist">${d}</span>`;
 		list.appendChild(el);
 		demoSteps.push({el, lat:step.location[1], lng:step.location[0], naviIdx:i, num});
 
@@ -1015,19 +1056,19 @@ function checkAndSpeak(curPos){
 	if(dist > 200 && dist <= 400 && !naviSpoken[`${naviCurrentStepIdx}_prep`]){
 		naviSpoken[`${naviCurrentStepIdx}_prep`] = true;
 		console.log(`[checkAndSpeak] 予告フェーズ: ステップ${naviCurrentStepIdx} 残り${dist.toFixed(0)}m`);
-		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep'));
+		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep', step.ref, step.destinations, step.exits));
 	}
 	// ② 直前（THR_SOON〜200m手前）
 	else if(dist > THR_SOON && dist <= 200 && !naviSpoken[`${naviCurrentStepIdx}_soon`]){
 		naviSpoken[`${naviCurrentStepIdx}_soon`] = true;
 		console.log(`[checkAndSpeak] 直前フェーズ: ステップ${naviCurrentStepIdx} 残り${dist.toFixed(0)}m`);
-		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon'));
+		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon', step.ref, step.destinations, step.exits));
 	}
 	// ③ 実行（≤THR_NOW）
 	else if(dist <= THR_NOW && !naviSpoken[`${naviCurrentStepIdx}_now`]){
 		naviSpoken[`${naviCurrentStepIdx}_now`] = true;
 		console.log(`[checkAndSpeak] 実行フェーズ: ステップ${naviCurrentStepIdx} 残り${dist.toFixed(0)}m`);
-		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now'));
+		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'now', step.ref, step.destinations, step.exits));
 	}
 
 	// バナーは約 300ms ごとに更新（可視 DOM への毎フレーム repaint を防ぐ）
@@ -1045,7 +1086,8 @@ function updateNaviBanner(stepIdx,dist){
 	const step=naviSteps[stepIdx];
 	if(!step)return;
 	const arrow=maneuverArrow(step.type,step.modifier);
-	const label=maneuverLabel(step.type,step.modifier,step.name);
+	const label=maneuverLabel(step.type,step.modifier,step.name,step.ref,step.destinations,step.exits);
+	const sub=makeSubInfo(step);
 	const distStr=dist==null?''
 		:dist>=1000?`${(dist/1000).toFixed(1)}km先`
 		:`${Math.round(dist)}m先`;
@@ -1054,10 +1096,16 @@ function updateNaviBanner(stepIdx,dist){
 	document.getElementById('navi-arrow').textContent=arrow;
 	document.getElementById('navi-dist-label').textContent=distStr;
 	document.getElementById('navi-instruction').textContent=label;
+	const naviSub=document.getElementById('navi-sub-info');
+	naviSub.textContent=sub;
+	naviSub.style.display=sub?'':'none';
 	// 地図上オーバーレイ
 	document.getElementById('map-navi-arrow').textContent=arrow;
 	document.getElementById('map-navi-dist').textContent=distStr;
 	document.getElementById('map-navi-text').textContent=label;
+	const mapSub=document.getElementById('map-navi-sub');
+	mapSub.textContent=sub;
+	mapSub.style.display=sub?'':'none';
 }
 
 // ステップ一覧のハイライト（naviCurrentStepIdx と demoSteps の naviIdx で照合）
@@ -1114,7 +1162,7 @@ async function reroute(lat,lng){
 		naviSteps=[];
 		(route.legs||[]).forEach(leg=>{
 			(leg.steps||[]).forEach(step=>{
-				naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||''});
+				naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||'',ref:step.ref||'',destinations:step.destinations||'',exits:step.exits||''});
 			});
 		});
 		naviCurrentStepIdx=0;naviSpoken={};naviApproaching=false;naviPrevDist=Infinity;
