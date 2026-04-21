@@ -402,7 +402,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260420PR47';
+const APP_VERSION='260421PR48';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -524,41 +524,73 @@ function makeVoiceText(type,modifier,roadName,distM,phase,ref,destinations,exits
 			return '目的地付近です。案内を終了します。';
 		case 'turn': {
 			if(modifier==='uturn') return `${prefix}Uターンしてください。`;
+			if(phase==='now') return `${dir}してください。`;
 			const refStr=ref?`${ref}です。`:'';
 			return `${prefix}${dir}してください。${road}${refStr}`;
 		}
 		case 'continue':
-			return phase==='prep'?`${distStr}先、直進です。${road}`:'そのまま直進です。';
+			if(phase==='prep') return `${distStr}先、直進です。${road}`;
+			if(phase==='soon') return `まもなく、直進です。${road}`;
+			return '直進してください。';
 		case 'new name':
-			return phase==='prep'?`${distStr}先、道なりに進んでください。${road}`:'道なりに進んでください。';
+			if(phase==='prep') return `${distStr}先、道なりに進んでください。${road}`;
+			if(phase==='soon') return `まもなく、道なりに進んでください。${road}`;
+			return '道なりに進んでください。';
 		case 'fork': {
 			const destStr=destinations?`${destinations}方面へ。`:'';
+			if(phase==='now'){
+				if(modifier==='slight right'||modifier==='right') return '右方向に進んでください。';
+				if(modifier==='slight left'||modifier==='left')  return '左方向に進んでください。';
+				return '分岐を直進してください。';
+			}
 			if(modifier==='slight right'||modifier==='right') return `${prefix}右方向に進んでください。${destStr}${road}`;
 			if(modifier==='slight left'||modifier==='left')  return `${prefix}左方向に進んでください。${destStr}${road}`;
 			return `${prefix}分岐を直進してください。${destStr}${road}`;
 		}
-		case 'merge':
-			if(modifier==='right') return `${prefix}右から合流してください。`;
-			if(modifier==='left')  return `${prefix}左から合流してください。`;
-			return `${prefix}合流してください。`;
+		case 'merge': {
+			if(phase==='now'){
+				if(modifier==='right') return '右から合流してください。';
+				if(modifier==='left')  return '左から合流してください。';
+				return '合流してください。';
+			}
+			if(modifier==='right') return `${prefix}右から合流してください。${road}`;
+			if(modifier==='left')  return `${prefix}左から合流してください。${road}`;
+			return `${prefix}合流してください。${road}`;
+		}
 		case 'on ramp': {
 			const destStr=destinations?`${destinations}方面へ。`:'';
+			if(phase==='now'){
+				if(modifier==='right') return '右のランプから進入してください。';
+				if(modifier==='left')  return '左のランプから進入してください。';
+				return 'ランプから進入してください。';
+			}
 			if(modifier==='right') return `${prefix}右のランプから進入してください。${destStr}`;
 			if(modifier==='left')  return `${prefix}左のランプから進入してください。${destStr}`;
 			return `${prefix}ランプから進入してください。${destStr}`;
 		}
 		case 'off ramp': {
 			const destStr=destinations?`${destinations}方面。`:'';
+			if(phase==='now'){
+				if(exits) return `出口${exits}から出てください。`;
+				return '出口から出てください。';
+			}
 			if(exits) return `${prefix}出口${exits}から出てください。${destStr}`;
 			if(modifier==='right') return `${prefix}右の出口から出てください。${destStr}`;
 			if(modifier==='left')  return `${prefix}左の出口から出てください。${destStr}`;
 			return `${prefix}出口から出てください。${destStr}`;
 		}
-		case 'end of road':
-			if(modifier==='right')    return `${prefix}突き当たりを右折してください。`;
-			if(modifier==='left')     return `${prefix}突き当たりを左折してください。`;
-			if(modifier==='straight') return `${prefix}突き当たりをそのまま直進してください。`;
-			return `${prefix}突き当たりです。`;
+		case 'end of road': {
+			if(phase==='now'){
+				if(modifier==='right')    return '突き当たりを右折してください。';
+				if(modifier==='left')     return '突き当たりを左折してください。';
+				if(modifier==='straight') return '突き当たりをそのまま直進してください。';
+				return '突き当たりです。';
+			}
+			if(modifier==='right')    return `${prefix}突き当たりを右折してください。${road}`;
+			if(modifier==='left')     return `${prefix}突き当たりを左折してください。${road}`;
+			if(modifier==='straight') return `${prefix}突き当たりをそのまま直進してください。${road}`;
+			return `${prefix}突き当たりです。${road}`;
+		}
 		case 'roundabout':
 		case 'roundabout turn': {
 			const exitNum=naviSteps[naviCurrentStepIdx]?.exit;
@@ -572,8 +604,10 @@ function makeVoiceText(type,modifier,roadName,distM,phase,ref,destinations,exits
 			return `${prefix}${name}に入り、${exitStr}出てください。`;
 		}
 		case 'exit_roundabout':
+			if(phase==='now') return 'ラウンドアバウトを出てください。';
 			return `${prefix}ラウンドアバウトを出てください。${road}`;
 		case 'exit_rotary':
+			if(phase==='now') return 'ロータリーを出てください。';
 			return `${prefix}ロータリーを出てください。${road}`;
 		case 'notification':
 			return ''; // スキップ
