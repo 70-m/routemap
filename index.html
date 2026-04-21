@@ -108,6 +108,12 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 #navi-dist-label{font-family:'Space Mono',monospace;font-size:11px;color:var(--nav);font-weight:700;}
 #navi-instruction{font-size:13px;color:var(--text);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 #navi-sub-info{font-size:10px;color:var(--nav);opacity:.8;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#navi-lanes{padding:0 14px 8px;gap:5px;flex-wrap:wrap;}
+#navi-lanes.visible{display:flex;}
+#map-navi-lanes{padding:0 10px 6px;gap:4px;flex-wrap:wrap;}
+#map-navi-lanes.visible{display:flex;}
+.lane{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 3px;border-radius:4px;background:rgba(255,255,255,.04);color:var(--nav);opacity:.3;font-size:13px;border:1px solid transparent;}
+.lane.valid{opacity:1;background:rgba(167,139,250,.18);border-color:var(--nav);}
 
 /* コントロール行 */
 #navi-controls{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid rgba(167,139,250,.2);background:rgba(167,139,250,.04);}
@@ -319,6 +325,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 							<div id="navi-dist-label">—</div>
 							<div id="navi-instruction">案内を準備中...</div>
 							<div id="navi-sub-info" style="display:none;"></div>
+					<div id="navi-lanes" style="display:none;"></div>
 						</div>
 					</div>
 					<div id="navi-offroute">⚠ ルートを外れました。再探索中...</div>
@@ -365,6 +372,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 						<div id="map-navi-dist">—</div>
 						<div id="map-navi-text">案内中...</div>
 						<div id="map-navi-sub" style="display:none;"></div>
+					<div id="map-navi-lanes" style="display:none;"></div>
 					</div>
 				</div>
 			</div>
@@ -402,7 +410,7 @@ input[type="text"]:disabled{opacity:.4;cursor:not-allowed;}
 // ════════════════════════════════════════════════
 //  アプリバージョン
 // ════════════════════════════════════════════════
-const APP_VERSION='260421PR48';
+const APP_VERSION='260421PR54';
 document.getElementById('app-version').textContent=APP_VERSION;
 console.log(`[App] バージョン: ${APP_VERSION}`);
 
@@ -625,6 +633,32 @@ function makeSubInfo(step){
 	return parts.join('  ');
 }
 
+// 車線インジケーターHTML文字列を生成
+function makeLaneHtml(lanes){
+	if(!lanes||!lanes.length)return'';
+	const arrowMap={
+		'uturn':'↩','sharp left':'↰','left':'←','slight left':'↙',
+		'straight':'↑','none':'↑','slight right':'↘','right':'→','sharp right':'↱'
+	};
+	return lanes.map(lane=>{
+		const arrows=(lane.indications||['straight']).map(i=>arrowMap[i]||'↑').join('');
+		return `<span class="lane${lane.valid?' valid':''}">${arrows}</span>`;
+	}).join('');
+}
+
+// 車線案内音声テキストを生成（prep / soon フェーズ用）
+function makeLaneVoice(lanes){
+	if(!lanes||!lanes.length)return'';
+	const valid=lanes.filter(l=>l.valid);
+	if(!valid.length)return'';
+	const hasRight=valid.some(l=>l.indications?.some(i=>i.includes('right')));
+	const hasLeft =valid.some(l=>l.indications?.some(i=>i.includes('left')));
+	const hasStraight=valid.some(l=>l.indications?.some(i=>i==='straight'||i==='none'));
+	if(hasRight&&!hasLeft&&!hasStraight)return'右車線を走ってください。';
+	if(hasLeft&&!hasRight&&!hasStraight)return'左車線を走ってください。';
+	return'';
+}
+
 // maneuver → 矢印絵文字
 function maneuverArrow(type,modifier){
 	if(type==='arrive') return '🏁';
@@ -813,7 +847,8 @@ async function searchRoute(){
 					rotary_name:step.rotary_name||'',
 					ref:step.ref||'',
 					destinations:step.destinations||'',
-					exits:step.exits||''
+					exits:step.exits||'',
+					lanes:step.intersections?.[0]?.lanes||[]
 				});
 			});
 		});
@@ -1090,13 +1125,13 @@ function checkAndSpeak(curPos){
 	if(dist > 200 && dist <= 400 && !naviSpoken[`${naviCurrentStepIdx}_prep`]){
 		naviSpoken[`${naviCurrentStepIdx}_prep`] = true;
 		console.log(`[checkAndSpeak] 予告フェーズ: ステップ${naviCurrentStepIdx} 残り${dist.toFixed(0)}m`);
-		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep', step.ref, step.destinations, step.exits));
+		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'prep', step.ref, step.destinations, step.exits)+makeLaneVoice(step.lanes));
 	}
 	// ② 直前（THR_SOON〜200m手前）
 	else if(dist > THR_SOON && dist <= 200 && !naviSpoken[`${naviCurrentStepIdx}_soon`]){
 		naviSpoken[`${naviCurrentStepIdx}_soon`] = true;
 		console.log(`[checkAndSpeak] 直前フェーズ: ステップ${naviCurrentStepIdx} 残り${dist.toFixed(0)}m`);
-		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon', step.ref, step.destinations, step.exits));
+		speak(makeVoiceText(step.type, step.modifier, step.name, dist, 'soon', step.ref, step.destinations, step.exits)+makeLaneVoice(step.lanes));
 	}
 	// ③ 実行（≤THR_NOW）
 	else if(dist <= THR_NOW && !naviSpoken[`${naviCurrentStepIdx}_now`]){
@@ -1140,6 +1175,14 @@ function updateNaviBanner(stepIdx,dist){
 	const mapSub=document.getElementById('map-navi-sub');
 	mapSub.textContent=sub;
 	mapSub.style.display=sub?'':'none';
+	// 車線インジケーター
+	const laneHtml=makeLaneHtml(step.lanes);
+	const naviLanes=document.getElementById('navi-lanes');
+	naviLanes.innerHTML=laneHtml;
+	if(laneHtml){naviLanes.classList.add('visible');}else{naviLanes.classList.remove('visible');}
+	const mapLanes=document.getElementById('map-navi-lanes');
+	mapLanes.innerHTML=laneHtml;
+	if(laneHtml){mapLanes.classList.add('visible');}else{mapLanes.classList.remove('visible');}
 }
 
 // ステップ一覧のハイライト（naviCurrentStepIdx と demoSteps の naviIdx で照合）
@@ -1196,7 +1239,7 @@ async function reroute(lat,lng){
 		naviSteps=[];
 		(route.legs||[]).forEach(leg=>{
 			(leg.steps||[]).forEach(step=>{
-				naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||'',ref:step.ref||'',destinations:step.destinations||'',exits:step.exits||''});
+				naviSteps.push({type:step.maneuver?.type||'',modifier:step.maneuver?.modifier||'',location:step.maneuver?.location||[0,0],name:step.name||'',distance:step.distance,duration:step.duration,exit:step.maneuver?.exit,rotary_name:step.rotary_name||'',ref:step.ref||'',destinations:step.destinations||'',exits:step.exits||'',lanes:step.intersections?.[0]?.lanes||[]});
 			});
 		});
 		naviCurrentStepIdx=0;naviSpoken={};naviApproaching=false;naviPrevDist=Infinity;
